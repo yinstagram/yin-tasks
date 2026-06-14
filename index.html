@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0a">
+<title>Yin Tasks</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+body { background: #0a0a0a; color: #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Hiragino Sans", sans-serif; }
+.glass { background: rgba(20,20,20,0.6); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); }
+.tap { transition: all 0.15s; }
+.tap:active { transform: scale(0.97); opacity: 0.7; }
+</style>
+</head>
+<body class="min-h-screen pb-24" x-data="app()">
+
+<!-- Login screen -->
+<div x-show="!user" class="min-h-screen flex flex-col items-center justify-center p-6">
+  <h1 class="text-3xl font-bold mb-2">Yin Tasks</h1>
+  <p class="text-neutral-400 text-sm mb-8">Personal OS for Yin</p>
+  <div id="g_id_signin"></div>
+</div>
+
+<!-- Main app -->
+<div x-show="user" class="max-w-md mx-auto p-4">
+
+  <!-- Header -->
+  <header class="flex justify-between items-center mb-6 pt-4">
+    <div>
+      <h1 class="text-2xl font-bold">早晨 Yin</h1>
+      <p class="text-xs text-neutral-400" x-text="today"></p>
+    </div>
+    <button @click="logout()" class="text-xs text-neutral-500">登出</button>
+  </header>
+
+  <!-- Today's shoot (if any) -->
+  <template x-if="todayShoot">
+    <section class="glass rounded-2xl p-4 mb-4 border-l-4 border-red-500">
+      <div class="text-xs text-red-400 mb-1">🎬 今日拍攝</div>
+      <div class="font-semibold" x-text="todayShoot.title"></div>
+      <div class="text-sm text-neutral-400 mt-1" x-text="todayShoot.time"></div>
+    </section>
+  </template>
+
+  <!-- Top priorities -->
+  <section class="mb-4">
+    <h2 class="text-sm font-semibold text-neutral-400 mb-2 px-1">🎯 今日 Top Priority</h2>
+    <div class="space-y-2">
+      <template x-for="(t, i) in priorities" :key="i">
+        <div class="glass rounded-2xl p-4 tap" @click="toggleDone(t)">
+          <div class="flex items-start gap-3">
+            <div class="mt-1 w-5 h-5 rounded-full border-2 flex-shrink-0"
+                 :class="t.done ? 'bg-green-500 border-green-500' : 'border-neutral-600'"></div>
+            <div class="flex-1">
+              <div class="font-semibold" :class="t.done && 'line-through text-neutral-500'" x-text="t.title"></div>
+              <div class="text-xs text-neutral-400 mt-1" x-text="t.next"></div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </section>
+
+  <!-- Active projects -->
+  <section class="mb-4">
+    <h2 class="text-sm font-semibold text-neutral-400 mb-2 px-1">🔧 Active Projects</h2>
+    <div class="space-y-2">
+      <template x-for="(p, i) in projects" :key="i">
+        <div class="glass rounded-2xl p-3 tap text-sm" x-text="p.title"></div>
+      </template>
+    </div>
+  </section>
+
+  <!-- To Learn -->
+  <section class="mb-4">
+    <h2 class="text-sm font-semibold text-neutral-400 mb-2 px-1">📚 To Learn</h2>
+    <div class="space-y-2">
+      <template x-for="(l, i) in toLearn" :key="i">
+        <div class="glass rounded-2xl p-3 tap text-sm flex justify-between">
+          <span x-text="l.title"></span>
+          <span class="text-xs text-neutral-500" x-text="l.status"></span>
+        </div>
+      </template>
+    </div>
+  </section>
+
+  <!-- Stale -->
+  <template x-if="stale.length">
+    <section class="mb-4">
+      <h2 class="text-sm font-semibold text-yellow-500 mb-2 px-1">🚧 待決定（>7 日無進展）</h2>
+      <div class="space-y-2">
+        <template x-for="(s, i) in stale" :key="i">
+          <div class="glass rounded-2xl p-3 text-sm border border-yellow-900">
+            <div x-text="s.title"></div>
+            <div class="flex gap-2 mt-2">
+              <button class="text-xs px-3 py-1 rounded-full bg-green-900 text-green-200" @click="decideStale(s, 'keep')">繼續</button>
+              <button class="text-xs px-3 py-1 rounded-full bg-yellow-900 text-yellow-200" @click="decideStale(s, 'rest')">擺低</button>
+              <button class="text-xs px-3 py-1 rounded-full bg-red-900 text-red-200" @click="decideStale(s, 'drop')">棄做</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+  </template>
+
+  <!-- Reply to Claude -->
+  <section class="mb-4">
+    <h2 class="text-sm font-semibold text-neutral-400 mb-2 px-1">💬 Reply to Claude</h2>
+    <div class="glass rounded-2xl p-3">
+      <textarea x-model="replyText" rows="3" placeholder="..." class="w-full bg-transparent text-sm resize-none focus:outline-none"></textarea>
+      <button @click="sendReply()" class="mt-2 w-full bg-blue-600 hover:bg-blue-500 text-white rounded-xl py-2 text-sm font-semibold tap">Send</button>
+    </div>
+  </section>
+
+</div>
+
+<script>
+function app() {
+  return {
+    user: null,
+    today: new Date().toLocaleDateString('zh-HK', { year:'numeric', month:'long', day:'numeric', weekday:'long' }),
+    todayShoot: null,
+    priorities: [],
+    projects: [],
+    toLearn: [],
+    stale: [],
+    replyText: '',
+    apiBase: '', // will be set to Cloudflare Worker URL
+
+    async init() {
+      // Initialize Google Sign-In
+      window.onGoogleLoad = () => {
+        google.accounts.id.initialize({
+          client_id: 'TODO_REPLACE_WITH_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+          callback: (response) => this.handleSignIn(response),
+        });
+        google.accounts.id.renderButton(document.getElementById('g_id_signin'),
+          { theme: 'filled_black', size: 'large', text: 'signin_with' });
+      };
+      // Wait for Google library to load
+      const interval = setInterval(() => {
+        if (window.google?.accounts) { clearInterval(interval); window.onGoogleLoad(); }
+      }, 100);
+
+      // Load saved session
+      const saved = localStorage.getItem('yintasks_user');
+      if (saved) {
+        this.user = JSON.parse(saved);
+        this.loadData();
+      }
+    },
+
+    handleSignIn(response) {
+      const payload = JSON.parse(atob(response.credential.split('.')[1]));
+      if (payload.email !== 'zuyanww@gmail.com') {
+        alert('Sorry, only Yin can access.');
+        return;
+      }
+      this.user = { email: payload.email, name: payload.name, picture: payload.picture, token: response.credential };
+      localStorage.setItem('yintasks_user', JSON.stringify(this.user));
+      this.loadData();
+    },
+
+    logout() {
+      this.user = null;
+      localStorage.removeItem('yintasks_user');
+    },
+
+    async loadData() {
+      // TODO: fetch from Cloudflare Worker -> Mac
+      // Stub data for now
+      this.priorities = [
+        { id: 1, title: '🎬 Aurum 6/17 拍攝 (T-3)', next: '6/16 晚 charge 電池 + clear SD + pack bag', done: false },
+        { id: 2, title: '🇸🇪 Sweden 仲爭買嘢', next: '等 Claude Code 跑完 audit', done: false },
+        { id: 3, title: '📄 Aurum invoice In037', next: 'PDF 已出，cross-verify + send Aurum', done: true },
+      ];
+      this.projects = [
+        { title: '7 個 3D print backlog（全部未印）' },
+        { title: '🇸🇪 Sweden Trip — T-13 日' },
+        { title: '📄 Invoice automation workflow' },
+      ];
+      this.toLearn = [
+        { title: '1. DaVinci Resolve Scripting API', status: 'queued' },
+        { title: '2. ComfyUI', status: 'queued' },
+        { title: '3. Blender 3D print advanced', status: 'queued' },
+      ];
+      this.stale = [];
+    },
+
+    async toggleDone(t) {
+      t.done = !t.done;
+      // TODO: POST to worker
+    },
+
+    async decideStale(s, decision) {
+      // TODO: POST to worker
+      this.stale = this.stale.filter(x => x.id !== s.id);
+    },
+
+    async sendReply() {
+      if (!this.replyText.trim()) return;
+      // TODO: POST to worker -> Mac inbox.md
+      const text = this.replyText.trim();
+      alert(`Stub: would send "${text}" to Claude inbox.`);
+      this.replyText = '';
+    },
+  };
+}
+</script>
+
+</body>
+</html>
