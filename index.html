@@ -130,7 +130,7 @@ function app() {
     toLearn: [],
     stale: [],
     replyText: '',
-    apiBase: '', // will be set to Cloudflare Worker URL
+    apiBase: 'https://sauce-women-regards-bachelor.trycloudflare.com', // will be set to Cloudflare Worker URL
 
     async init() {
       // Initialize Google Sign-In
@@ -166,14 +166,36 @@ function app() {
       this.loadData();
     },
 
+    parseServerData(data) {
+      // active-tracking.md parsed structure
+      const all = [...(data.one_time||[]), ...(data.active_projects||[])];
+      this.priorities = all.slice(0, 5).map((line, i) => ({
+        id: i, title: line.replace(/^\s*- \[.\]\s*/, '').slice(0, 80), next: '', done: line.includes('[x]')
+      }));
+      this.projects = (data.active_projects||[]).map(line => ({title: line.replace(/^\s*- \[.\]\s*/, '').slice(0, 80)}));
+      this.toLearn = (data.to_learn||[]).map(line => ({
+        title: line.replace(/^\s*- \[.\]\s*/, '').slice(0, 60), status: line.match(/status:\s*(\w+)/)?.[1] || 'queued'
+      }));
+      this.stale = (data.stale||[]).map((line, i) => ({id: i, title: line.replace(/^\s*- \[.\]\s*/, '').slice(0, 80)}));
+    },
+
     logout() {
       this.user = null;
       localStorage.removeItem('yintasks_user');
     },
 
     async loadData() {
-      // TODO: fetch from Cloudflare Worker -> Mac
-      // Stub data for now
+      try {
+        const r = await fetch(this.apiBase + '/tasks', {
+          headers: { 'Authorization': 'Bearer ' + this.user.token }
+        });
+        if (r.ok) {
+          const data = await r.json();
+          this.parseServerData(data);
+          return;
+        }
+      } catch (e) { console.error('fetch failed', e); }
+      // Fallback stub
       this.priorities = [
         { id: 1, title: '🎬 Aurum 6/17 拍攝 (T-3)', next: '6/16 晚 charge 電池 + clear SD + pack bag', done: false },
         { id: 2, title: '🇸🇪 Sweden 仲爭買嘢', next: '等 Claude Code 跑完 audit', done: false },
@@ -206,8 +228,15 @@ function app() {
       if (!this.replyText.trim()) return;
       // TODO: POST to worker -> Mac inbox.md
       const text = this.replyText.trim();
-      alert(`Stub: would send "${text}" to Claude inbox.`);
-      this.replyText = '';
+      try {
+        const r = await fetch(this.apiBase + '/reply', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + this.user.token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        if (r.ok) { this.replyText = ''; alert('✓ Sent to Claude inbox'); }
+        else alert('Failed: ' + r.status);
+      } catch (e) { alert('Error: ' + e.message); }
     },
   };
 }
